@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 from openIMIS.openimisapps import openimis_apps
-
+import importlib.util
 import logging
 
 logger = logging.getLogger(__file__)
@@ -94,20 +94,30 @@ class ReportConfig(AppConfig):
 
         for app in all_apps:
             try:
-                appreports = __import__(f"{app}.report")
-                if hasattr(appreports.report, "report_definitions") and isinstance(
-                    appreports.report.report_definitions, list
-                ):
-                    self.reports += appreports.report.report_definitions
-                    logger.debug(
-                        f"{app} {len(appreports.report.report_definitions)} reports loaded"
-                    )
-            except ModuleNotFoundError as exc:
-                # The module doesn't have a report.py, just skip
-                logger.debug(f"{app} has no report module, skipping")
-            except AttributeError as exc:
-                logger.debug(f"{app} reports couldn't be loaded")
-                raise  # This can be hiding actual compilation errors
+                self.load_app_reports(app)
             except Exception as exc:
-                logger.debug(f"{app} exception", exc)
+                logger.debug(f"{app}: unknown exception occurred while adding report_definitions: {exc}")
+
         logger.debug("done loading reports")
+
+    def load_app_reports(self, app_):
+        spec = importlib.util.find_spec(f"{app_}.report")
+        if spec:
+            app = __import__(f"{app_}.report")
+            if (
+                hasattr(app, "report") and
+                hasattr(app.report, "report_definitions")and
+                isinstance(app.report.report_definitions, list)
+            ):
+                self.reports += app.report.report_definitions
+                logger.debug(
+                    f"{app_} {len(app.report.report_definitions)} reports loaded"
+                )
+            else:
+                logger.debug(
+                    f"{app_} has report submodule but no valid report_definitions"
+                )
+        else:
+            logger.debug(
+                logger.debug(f"{app_} has no report submodule, skipping")
+            )
