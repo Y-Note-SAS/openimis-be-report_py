@@ -18,7 +18,7 @@ def add_query_rights(apps, schema_editor):
     Add gql_query_reports_perms to every role with report permission (based on existing data).
     """
     for role in ROLES_ID:
-        insert_role_right_for_system(role, REPORT_QUERY_ROLE_ID)
+        insert_role_right_for_system(role, REPORT_QUERY_ROLE_ID, apps)
 
 
 def remove_query_rights(apps, schema_editor):
@@ -26,7 +26,7 @@ def remove_query_rights(apps, schema_editor):
     Add gql_query_reports_perms to every role with report permission (based on existing data).
     """
     for role in ROLES_ID:
-        remove_role_right_for_system(role, REPORT_QUERY_ROLE_ID)
+        remove_role_right_for_system(role, REPORT_QUERY_ROLE_ID, apps)
 
 
 class Migration(migrations.Migration):

@@ -15,7 +15,7 @@ def add_rights(apps, schema_editor):
     """
     Add reports_primary_operational_indicator_policies permission to the Enrolment Officer.
     """
-    insert_role_right_for_system(ENROLMENT_OFFICER_ROLE_IS_SYSTEM, ROLE_RIGHT_ID)
+    insert_role_right_for_system(ENROLMENT_OFFICER_ROLE_IS_SYSTEM, ROLE_RIGHT_ID, apps)
 
 
 class Migration(migrations.Migration):

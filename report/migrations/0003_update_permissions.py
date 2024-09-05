@@ -2,7 +2,8 @@ from django.db import migrations
 
 
 def assign_updated_report_permissions(apps, schema_editor):
-    from core.models import RoleRight, Role
+    RoleRight = apps.get_model('core', 'RoleRight')
+    Role = apps.get_model('core', 'Role')
     role_ids = RoleRight.objects.filter(right_id=131200).values_list('role__id', flat=True)
 
     relevant_roles = Role.objects\
