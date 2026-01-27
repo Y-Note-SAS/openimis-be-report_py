@@ -55,6 +55,7 @@ def report(request, report_name, report_format="pdf", alternate=None):
     }
 
     data = report_config["python_query"](request.user, **unlisted)
+    filename_from_data = data.get("report_filename", report_name)
 
     return FileResponse(
         io.BytesIO(
@@ -64,7 +65,7 @@ def report(request, report_name, report_format="pdf", alternate=None):
                 data,
                 report_format,
             )
-        ), filename=f"{report_name}.{report_format}", as_attachment=False
+        ), filename=f"{filename_from_data}.{report_format}", as_attachment=False
     )
 
 
