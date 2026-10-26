@@ -131,7 +131,7 @@ def generate_report(report_name, definition, data, report_format="pdf", local_fi
                    ],
                    encode_error_handling="strict",
                    is_test_data=is_test_data,
-                   core_fonts_encoding="utf-8",
+                   #core_fonts_encoding="utf-8",
                    )
     except Exception as e:
         logger.exception(f"Error loading report definition {report_name}")
