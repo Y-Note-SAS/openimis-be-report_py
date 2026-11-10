@@ -108,6 +108,7 @@ class ReportConfig(AppConfig):
             except AttributeError as exc:
                 logger.debug(f"{app} reports couldn't be loaded")
                 raise  # This can be hiding actual compilation errors
-            except Exception as exc:
-                logger.debug(f"{app} exception", exc)
+            except Exception:
+                # the reports of that app are not available: make it visible
+                logger.warning("%s reports couldn't be loaded", app, exc_info=True)
         logger.debug("done loading reports")
