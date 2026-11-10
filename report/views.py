@@ -81,6 +81,7 @@ def report(request, report_name, report_format="pdf", alternate=None):
         raise PermissionDenied(_("unauthorized"))
 
     data = report_config["python_query"](request.user, **unlisted)
+    filename_from_data = data.get("report_filename", report_name)
 
     # The queries signal a bad (or out of scope) parameter by returning
     # {"error": ...}: answer 400 instead of rendering the error into a PDF.
@@ -95,7 +96,7 @@ def report(request, report_name, report_format="pdf", alternate=None):
                 data,
                 report_format,
             )
-        ), filename=f"{report_name}.{report_format}", as_attachment=False
+        ), filename=f"{filename_from_data}.{report_format}", as_attachment=False
     )
 
 
