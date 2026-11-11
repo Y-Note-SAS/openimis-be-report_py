@@ -188,3 +188,49 @@ class ReportLocationScopeTest(_Base):
             return
         rows = (captured.get("data") or {}).get("data") or []
         self.assertNotIn("SPRPI002", {r["chf_id"] for r in rows})
+
+
+class ReportUnscopedRunTest(_Base):
+    """[NEW] Run on "all" (no specific location), most report queries cover every district:
+    a location-restricted user must name a location in scope, and may not run the
+    national-only reports; the unscoped-location right (location module) lifts it."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        from location.apps import LocationConfig
+        cls.national_user = create_right_only_user(
+            "sprp_nat", [REPORT_QUERY_RIGHT, CLAIM_OVERVIEW_RIGHT]
+            + [int(r) for r in LocationConfig.gql_unscoped_location_perms], [cls.tree.d1.id])
+
+    def test_location_report_on_all_refused(self):
+        from report.scope import unscoped_run_refused
+        for params in ({}, {"requested_region_id": "-1", "requested_district_id": "-1"}, {"locationId": "0"}):
+            self.assertTrue(unscoped_run_refused(self.report_user, "claims_overview", params), params)
+
+    def test_location_report_with_own_district_allowed(self):
+        from report.scope import unscoped_run_refused
+        self.assertIsNone(unscoped_run_refused(
+            self.report_user, "claims_overview", {"requested_district_id": str(self.tree.d1.id)}))
+
+    def test_national_report_refused(self):
+        from report.scope import unscoped_run_refused
+        self.assertTrue(unscoped_run_refused(self.report_user, "contributions_distribution", {}))
+
+    def test_self_limiting_reports_unaffected(self):
+        from report.scope import unscoped_run_refused
+        for name in ("insuree_missing_photo", "insuree_family_overview"):
+            self.assertIsNone(unscoped_run_refused(self.report_user, name, {}), name)
+
+    def test_unscoped_location_right_lifts_it(self):
+        from report.scope import unscoped_run_refused
+        self.assertIsNone(unscoped_run_refused(self.national_user, "claims_overview", {}))
+        self.assertIsNone(unscoped_run_refused(self.national_user, "contributions_distribution", {}))
+
+    @mock.patch("report.views.generate_report", return_value=b"%PDF-fake")
+    def test_view_refuses_before_running_the_query(self, _gen):
+        config = ReportConfig.get_report("claims_overview")
+        with mock.patch.dict(config, {"python_query": mock.Mock(return_value={"data": []})}):
+            response = self.client_for(self.report_user).get(_url("claims_overview/pdf/"))
+            self.assertEqual(403, response.status_code, _body(response))
+            config["python_query"].assert_not_called()

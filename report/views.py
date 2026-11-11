@@ -17,7 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from report.services import generate_report, get_report_definition
 
 from .apps import ReportConfig
-from .scope import out_of_scope_parameters
+from .scope import out_of_scope_parameters, unscoped_run_refused
 
 logger = logging.getLogger(__file__)
 
@@ -78,6 +78,12 @@ def report(request, report_name, report_format="pdf", alternate=None):
     refused = out_of_scope_parameters(request.user, unlisted)
     if refused:
         logger.warning("report %s refused, parameters out of scope: %s", report_name, refused)
+        raise PermissionDenied(_("unauthorized"))
+    # ... and so is a run on "all" (every district) or a national-only report, for a user
+    # narrowed to their districts
+    reason = unscoped_run_refused(request.user, report_name, unlisted)
+    if reason:
+        logger.warning("report %s refused for a location-restricted user: %s", report_name, reason)
         raise PermissionDenied(_("unauthorized"))
 
     data = report_config["python_query"](request.user, **unlisted)

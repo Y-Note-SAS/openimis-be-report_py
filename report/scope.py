@@ -9,8 +9,11 @@ report view refuses a parameter naming a location or a health facility outside
 the user's scope before the query runs.
 
 "All" values (empty, 0 or the negative ALL_* sentinels of the queries) are not a
-specific location and pass: limiting an unrestricted run is the query's own job
-(see `insuree_family_overview` and `insuree_missing_photo`).
+specific location. Most queries then report on every district, so a location-restricted
+user (not an IMIS admin, without the unscoped-location right) must name a location in
+scope for the reports of LOCATION_REPORTS, and may not run NATIONAL_REPORTS (national
+figures only) at all. The queries limiting an unrestricted run themselves
+(`insuree_family_overview`, `insuree_missing_photo`) are in neither set.
 """
 from django.conf import settings
 
@@ -24,6 +27,20 @@ LOCATION_CODE_PARAMS = ("location0", "location1", "location2", "district")
 #: parameters carrying a HealthFacility primary key / code
 HF_ID_PARAMS = ("requested_hf_id", "hfId", "hf_id")
 HF_CODE_PARAMS = ("hflocation",)
+
+
+#: reports narrowed by their location / health facility parameters: run on "all" they
+#: cover every district
+LOCATION_REPORTS = frozenset((
+    "claim_percentage_referrals", "claims_overview", "claim_history",
+    "claims_primary_operational_indicators", "premium_collection", "payment_category_overview",
+    "registers_status", "insurees_pending_enrollment", "enrolled_families", "policy_renewals",
+    "policy_primary_operational_indicators", "product_sales",
+))
+#: reports with no location parameter: national figures only
+NATIONAL_REPORTS = frozenset((
+    "contributions_distribution", "product_derived_operational_indicators",
+))
 
 
 def _specific_id(value):
@@ -46,8 +63,9 @@ def _scoped_user(user):
     from core.models import InteractiveUser
     if not settings.ROW_SECURITY:
         return None
+    from location.models import is_location_unscoped
     i_user = getattr(user, "_u", user)
-    if not isinstance(i_user, InteractiveUser) or i_user.is_imis_admin:
+    if not isinstance(i_user, InteractiveUser) or is_location_unscoped(i_user):
         return None
     return i_user
 
@@ -84,3 +102,24 @@ def out_of_scope_parameters(user, params):
             if value and not visible.filter(code=value, validity_to__isnull=True).exists():
                 refused.append(name)
     return refused
+
+
+def unscoped_run_refused(user, report_name, params):
+    """
+    Why a location-restricted `user` may not run `report_name` with `params`, or None:
+    a national-only report, or a location report run on "all" (no specific location or
+    health facility, which would cover every district).
+    """
+    if _scoped_user(user) is None:
+        return None
+    if report_name in NATIONAL_REPORTS:
+        return "national report"
+    if report_name in LOCATION_REPORTS:
+        specific = (
+            any(_specific_id(params.get(k)) for k in LOCATION_ID_PARAMS + HF_ID_PARAMS)
+            or any(_specific_code(params.get(k)) for k in LOCATION_CODE_PARAMS + HF_CODE_PARAMS)
+        )
+        if not specific:
+            return "no location in scope given"
+    return None
+
