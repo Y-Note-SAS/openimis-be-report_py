@@ -10,17 +10,34 @@ from django.template import loader
 from django.utils.translation import gettext as _
 from django.views.decorators.clickjacking import xframe_options_exempt
 from reportbro import Report, ReportBroError
-from rest_framework.decorators import api_view
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
 
 from report.services import generate_report, get_report_definition
 
 from .apps import ReportConfig
+from .scope import out_of_scope_parameters, unscoped_run_refused
 
 logger = logging.getLogger(__file__)
 
 
+def _report_right_required():
+    """Permission class (ported from the reference `core.views.check_user_rights`):
+    authenticated AND holding the generic report right."""
+
+    class UserWithReportRight(IsAuthenticated):
+        def has_permission(self, request, view):
+            return super().has_permission(request, view) and \
+                request.user.has_perms(ReportConfig.gql_query_report_perms)
+
+    return UserWithReportRight
+
+
 @api_view(["GET"])
+# Only authentication is enforced here: which right grants *this* report depends
+# on the report being asked for. The rights check is below (reference logic).
+@permission_classes([IsAuthenticated])
 def report(request, report_name, report_format="pdf", alternate=None):
     """
     Run a report
@@ -41,10 +58,12 @@ def report(request, report_name, report_format="pdf", alternate=None):
     report_definition = get_report_definition(
         report_name, report_config["default_report"]
     )
-    if (
-        report_config.get("permission")
-        and not request.user.has_perms(ReportConfig.gql_query_report_perms)
-        and not request.user.has_perms(report_config.get("permission"))
+    # Either the generic "may run reports" right or the right the report declares
+    # for itself is enough. A report that declares none needs the generic right.
+    report_permission = report_config.get("permission")
+    if not (
+        request.user.has_perms(ReportConfig.gql_query_report_perms)
+        or (report_permission and request.user.has_perms(report_permission))
     ):
         raise PermissionDenied(_("unauthorized"))
 
@@ -54,8 +73,26 @@ def report(request, report_name, report_format="pdf", alternate=None):
         for k, v in request.GET.items()
     }
 
+    # A location / health facility parameter outside the user's scope is refused
+    # before the query runs (the queries do not check it themselves).
+    refused = out_of_scope_parameters(request.user, unlisted)
+    if refused:
+        logger.warning("report %s refused, parameters out of scope: %s", report_name, refused)
+        raise PermissionDenied(_("unauthorized"))
+    # ... and so is a run on "all" (every district) or a national-only report, for a user
+    # narrowed to their districts
+    reason = unscoped_run_refused(request.user, report_name, unlisted)
+    if reason:
+        logger.warning("report %s refused for a location-restricted user: %s", report_name, reason)
+        raise PermissionDenied(_("unauthorized"))
+
     data = report_config["python_query"](request.user, **unlisted)
     filename_from_data = data.get("report_filename", report_name)
+
+    # The queries signal a bad (or out of scope) parameter by returning
+    # {"error": ...}: answer 400 instead of rendering the error into a PDF.
+    if isinstance(data, dict) and data.get("error"):
+        raise ValidationError(data["error"])
 
     return FileResponse(
         io.BytesIO(
@@ -69,7 +106,9 @@ def report(request, report_name, report_format="pdf", alternate=None):
     )
 
 
+@api_view(["GET", "PUT", "POST"])
 @xframe_options_exempt
+@permission_classes([_report_right_required()])
 def reportbro_designer(request):
     template = loader.get_template("report/reportbro.html")
 
@@ -77,7 +116,9 @@ def reportbro_designer(request):
     return HttpResponse(template.render(context, request))
 
 
+@api_view(["GET", "PUT", "POST"])
 @xframe_options_exempt
+@permission_classes([_report_right_required()])
 def reportbro_previewer(request):
     """
     Generates a report preview within the designer. This can work in two ways:
